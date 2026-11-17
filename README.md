@@ -26,18 +26,24 @@ variable set the program reads `/input` and writes `/output`, as the grader runs
 
 For each hour 2–24, every past big launch in the case's `comparables` gives one
 log-ratio, ln(viewers_h / viewers_1), of its own release day. The forecast's median
-log-ratio is the weighted median of those, with Gaussian weights on the distance in
-log hour-1 viewers between the target and each comparable (width 1.5): launches
-whose first hour drew about as many viewers count most. The spread is the weighted
-interquartile range of the same log-ratios, turned into a log-normal sigma
-(IQR / 1.349), times 0.9. The median log-ratio is shrunk toward 0 (persistence) for
-very big launches — 0.85 above 100k hour-1 viewers, 1.0 below 20k, linear between —
-because the biggest launches' curves run flatter than their neighbours' median
-suggests, while small launches really do explode later in the day.
+log-ratio is the weighted median of those, with Gaussian weights on two
+similarities: how close the launch's hour-1 print is to the target's, in log
+viewers (width 1.5), and how close its pre-release buzz growth is — ln(viewers
+24h before release) minus ln(viewers 7d before release), from the launch's hourly
+series (the target's own growth comes from the case's `history_hourly`) — width
+5.0. Launches whose audience was building at the same pace in the last week
+count most. The spread is the weighted interquartile range of the same
+log-ratios, turned into a log-normal sigma (IQR / 1.349), times 0.9. The median
+log-ratio is shrunk toward 0 (persistence) for very big launches — 0.85 above
+100k hour-1 viewers, 1.0 below 20k, linear between — because the biggest
+launches' curves run flatter than their neighbours' median suggests.
 
 Leave-one-out over the kit's 37 launch curves, pinball loss on the log scale:
 the house persistence baseline scores 0.930 over all 37 (0.251 over the 20 with
-hour-1 ≥ 50k); this model scores 0.412 over all 37 (0.204 over those 20).
+hour-1 ≥ 50k, 0.349 over the 21 with hour-1 in 20k–300k); this model scores
+0.391 over all 37 (0.184 over those 20, 0.258 over those 21). Version 1, which
+weighted on hour-1 size only, scored 0.412 / 0.204 / 0.288, and 0.247 on the
+practice phase.
 
 ---
 
