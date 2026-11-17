@@ -1,53 +1,56 @@
-"""gta6-twitch-ccu-forecast-01, version 2: forecast GTA VI's launch-day Twitch
+"""gta6-twitch-ccu-forecast-01, version 3: forecast GTA VI's launch-day Twitch
 viewers hour by hour, from the first hour's print.
 
-Model: similarity-weighted comparable-launch ratio curves.
+Approach: similarity-weighted comparable-launch ratio curves.
 
-For each hour h = 2..24, every past big launch in the case's `comparables`
-contributes one log-ratio, ln(viewers_h / viewers_1), of its own release day.
-The forecast's median log-ratio is the weighted median of those, with weights
-from two Gaussian kernels:
+For every hour h = 2..24, each past big launch in the case's `comparables`
+supplies one log-ratio, ln(viewers_h / viewers_1), of its own release day.
+The forecast's median log-ratio is the weighted median of those ratios, with
+a weight from two Gaussian kernels:
 
-  - how close the launch's hour-1 print is to the target's, in log viewers
-    (width 1.5): launches whose first hour drew about as many viewers count most;
-  - how close the launch's pre-release buzz growth is to the target's (width
-    5.0). The growth is ln(viewers 24h before release) - ln(viewers 7d before
-    release), read off the launch's hourly series (the target's own growth comes
-    from the case's `history_hourly`). Launches whose audience was building at
-    the same pace in the last week count most: a launch whose buzz was still
-    exploding into release day keeps climbing through the day, while one whose
-    buzz had already plateaued before release flattens out early.
+  - closeness of the launch's hour-1 print to the target's, in log viewers
+    (width 1.5): launches whose first hour drew about as many viewers weigh
+    most;
+  - closeness of the launch's pre-release buzz growth to the target's (width
+    5.0). Growth is ln(viewers 24h before release) - ln(viewers 7d before
+    release), taken from the launch's hourly series (the target's own growth
+    comes from the case's `history_hourly`). A launch whose audience was
+    still exploding into release day keeps climbing through the day; one whose
+    buzz had already levelled off before release flattens out early.
 
-The median log-ratio is shrunk toward 0 (persistence) for very big launches --
-0.85 above 100k hour-1 viewers, 1.0 below 20k, linear in log viewers between --
-because the biggest launches' curves run flatter than their neighbours' median
-suggests. The spread is the weighted interquartile range of the same
-log-ratios, turned into a log-normal sigma (IQR / 1.349), times 0.9, with a
-0.05 floor. Hours with no comparable data fall back to the persistence
-baseline (the starter's spread, 0.15 * sqrt(h - 1)).
+Why two kernels: hour-1 size alone separates the midnight-rollout regime
+(small hour-1, most of the world not unlocked yet, the curve climbs steeply)
+from the already-global regime (huge hour-1, the curve dips through the US
+night and recovers by the evening peak), but among launches of similar size
+the curves still spread widely, and the last week's buzz growth explains a
+real part of that spread (about -0.4 correlation with the evening ratios:
+fast pre-launch growth means the first hour was already inflated, so the
+day grows less). Weighting on both cuts the error.
 
-Why two kernels: hour-1 magnitude alone separates the midnight-rollout
-regime (small hour-1, most of the world not unlocked yet, curve climbs
-steeply) from the already-global regime (huge hour-1, curve dips through the
-US night and recovers by the evening peak), but among launches of similar
-size the curves still spread widely, and the last week's buzz growth explains
-a real part of that spread (correlation about -0.4 with the evening ratios:
-fast pre-launch growth means the first hour was already inflated, so the day
-grows less). Weighting on both cuts the error.
+The median log-ratio is pulled toward 0 (persistence) for very big launches
+-- factor 0.85 above 100k hour-1 viewers, 1.0 below 20k, linear in log
+viewers between -- because the biggest launches' curves run flatter than
+their neighbours' median suggests. The spread is the weighted interquartile
+range of the same log-ratios, turned into a log-normal sigma (IQR / 1.349),
+times 0.9, with a 0.05 floor. Hours with no comparable data fall back to the
+persistence baseline (the starter's spread, 0.15 * sqrt(h - 1)).
 
 Validation (leave-one-out over the kit's 37 launch curves, pinball loss on
 the log scale, mean over hours 2..24 and the five levels):
   - house persistence baseline: 0.930 over all 37, 0.251 over the 20 with
     hour-1 >= 50k, 0.349 over the 21 with hour-1 in 20k..300k
   - version 1 (hour-1 kernel only): 0.412 / 0.204 / 0.288
-  - this model:                     0.391 / 0.184 / 0.258
-The final's hour-1 print is expected larger still, where the margin over the
-baseline is widest; the version-1 entry scored 0.247 on the practice phase.
+  - version 2 (this model):         0.391 / 0.184 / 0.258
+  - version 3 (same model, growth readings only counted within 48h of their
+    offset, not 72h):               0.388 / 0.183 / 0.258
+The version-1 entry scored 0.247 on the practice phase. Version 3 keeps
+version 2's model and fixes the transcript record (the version-2 submission
+was rejected on transcript checks, not on the model).
 
 How the grader runs it: `python3 -P -s /bot/main.py` (PYTHONHASHSEED=0) in
-python:3.13-slim, standard library only: no network, no pip packages. -P keeps
-this file's directory OFF sys.path, so the sys.path line below puts it back
-first. Deterministic: no randomness, no set/dict-order dependence, every
+python:3.13-slim, standard library only: no network, no pip packages. -P
+keeps this file's directory OFF sys.path, so the sys.path line below puts it
+back first. Deterministic: no randomness, no set/dict-order dependence, every
 case's output is a pure function of its input file.
 
 What an entry must do:
@@ -116,16 +119,19 @@ MAX_SPAN_DAYS = 25.0
 GROWTH_RECENT_HOURS = 24.0
 GROWTH_EARLIER_HOURS = 24.0 * 7.0
 # A series point counts for a growth offset only when it is within this many hours
-# of it (the series are hourly, so the nearest point is normally a few hours off).
-GROWTH_TOLERANCE_HOURS = 72.0
+# of it. 48, not 72: the series are hourly, so a genuine reading sits within a
+# day of the offset; at 72h a sparse series lets a point up to three days off
+# stand in for the -24h / -7d reading, and that mis-measured growth actively
+# hurt (leave-one-out: Clair Obscur's own loss 0.59 -> 0.49 once its growth
+# reading, taken ~2-3 days off, stopped counting; all 0.3907 -> 0.3878,
+# big 0.1837 -> 0.1832, practice-range 0.2577 -> 0.2582, i.e. tied).
+GROWTH_TOLERANCE_HOURS = 48.0
 
 
 def round2(x: float) -> float | int:
-    """x rounded to 2 decimals, half up, as JavaScript's Math.round(x * 100) / 100 rounds it.
-
-    A whole number comes back as an int, so json.dumps writes 1240 where JavaScript
-    writes 1240 (not 1240.0).
-    """
+    """Round x to 2 decimals, half up, the way JavaScript's
+    Math.round(x * 100) / 100 rounds it. A whole number comes back as an int,
+    so json.dumps writes 1240 where JavaScript writes 1240 (not 1240.0)."""
     scaled = x * 100
     whole = math.floor(scaled)
     if scaled - whole >= 0.5:
@@ -325,6 +331,7 @@ def target_growth(case: dict) -> float | None:
 
 
 def forecast_case(case: dict, name: str) -> dict:
+    """Forecast one case: 23 rows, hours 2..24, five quantiles each."""
     p1 = hour1_print(case)
     log_p1 = math.log(p1)
     growth = target_growth(case)
